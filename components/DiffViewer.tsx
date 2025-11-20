@@ -1,15 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { DiffLine } from "../types";
 import { computeLineDiff } from "../utils/diff";
-import {
-  FileDiff,
-  Copy,
-  Check,
-  Columns,
-  List,
-  Undo2,
-  CheckCircle2,
-} from "lucide-react";
+import { FileDiff, Copy, Check, Columns, List, Undo2 } from "lucide-react";
 
 interface DiffViewerProps {
   original: string;
@@ -58,25 +50,17 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
       if (isTarget) {
         // Revert logic: Restore original state for this chunk
-        // - If it was 'add', we ignore it (undo addition)
-        // - If it was 'remove', we include it (restore removal)
-        // - If it was 'equal', we include it (no change)
         if (line.type === "remove" || line.type === "equal") {
           newTextParts.push(line.content);
         }
       } else {
         // Keep logic: Maintain current modified state for other chunks
-        // - If it was 'add', we include it (keep addition)
-        // - If it was 'remove', we ignore it (keep removal)
-        // - If it was 'equal', we include it (no change)
         if (line.type === "add" || line.type === "equal") {
           newTextParts.push(line.content);
         }
       }
     });
 
-    // Join with newlines
-    // Note: computeLineDiff splits by \n, so we join by \n.
     onRevert(newTextParts.join("\n"));
   };
 
@@ -84,7 +68,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     if (!onRevert) return null;
 
     return (
-      <div className="absolute right-2 top-0 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-[#0d1117] border border-gray-700/50 rounded-md shadow-xl p-0.5 transform translate-y-2">
+      <div className="absolute right-2 top-0 -translate-y-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl p-0.5 transform translate-y-2">
         <button
           onClick={() => handleRevertChunk(startIndex, endIndex)}
           className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/10 text-[10px] font-medium text-gray-300 hover:text-white transition-colors"
@@ -108,21 +92,21 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         rows.push(
           <div
             key={i}
-            className="grid grid-cols-2 hover:bg-gray-800/50 group border-b border-gray-800/30 last:border-0 transition-colors duration-75"
+            className="grid grid-cols-2 hover:bg-white/5 group border-b border-white/5 last:border-0 transition-colors duration-75"
           >
             <div className="flex text-gray-400">
-              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-xs font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50 h-full flex items-start justify-end leading-relaxed">
+              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-xs font-mono py-1 bg-[#09090b] border-r border-white/5 opacity-50 h-full flex items-start justify-end leading-relaxed">
                 {line.originalIndex}
               </span>
-              <span className="whitespace-pre-wrap break-all font-mono text-sm py-1 pl-4 opacity-70 leading-relaxed w-full">
+              <span className="whitespace-pre-wrap break-all font-mono text-xs text-gray-400/80 py-1 pl-4 leading-relaxed w-full">
                 {line.content || " "}
               </span>
             </div>
             <div className="flex text-gray-400">
-              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-xs font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50 h-full flex items-start justify-end leading-relaxed">
+              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-xs font-mono py-1 bg-[#09090b] border-r border-white/5 opacity-50 h-full flex items-start justify-end leading-relaxed">
                 {line.modifiedIndex}
               </span>
-              <span className="whitespace-pre-wrap break-all font-mono text-sm py-1 pl-4 opacity-70 leading-relaxed w-full">
+              <span className="whitespace-pre-wrap break-all font-mono text-xs text-gray-400/80 py-1 pl-4 leading-relaxed w-full">
                 {line.content || " "}
               </span>
             </div>
@@ -155,7 +139,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           blockRows.push(
             <div
               key={`${i}-${j}`}
-              className="grid grid-cols-2 border-b border-gray-800/30 last:border-0"
+              className="grid grid-cols-2 border-b border-white/5 last:border-0"
             >
               {/* LEFT SIDE (Original/Removed) */}
               <div className={`flex ${rem ? "bg-red-900/10" : ""}`}>
@@ -164,12 +148,12 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                     <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-red-500/50 text-xs font-mono py-1 bg-red-900/20 border-r border-red-900/20 h-full flex items-start justify-end leading-relaxed">
                       {rem.originalIndex}
                     </span>
-                    <span className="whitespace-pre-wrap break-all font-mono text-sm text-red-200/90 py-1 pl-4 leading-relaxed w-full">
+                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-red-200/90 py-1 pl-4 leading-relaxed w-full">
                       {rem.content || " "}
                     </span>
                   </>
                 ) : (
-                  <span className="w-12 flex-shrink-0 bg-[#0d1117] block border-r border-gray-800/50"></span>
+                  <span className="w-12 flex-shrink-0 bg-[#09090b] block border-r border-white/5"></span>
                 )}
               </div>
 
@@ -180,12 +164,12 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                     <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-emerald-500/50 text-xs font-mono py-1 bg-emerald-900/20 border-r border-emerald-900/20 h-full flex items-start justify-end leading-relaxed">
                       {add.modifiedIndex}
                     </span>
-                    <span className="whitespace-pre-wrap break-all font-mono text-sm text-emerald-200/90 py-1 pl-4 leading-relaxed w-full">
+                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-emerald-200/90 py-1 pl-4 leading-relaxed w-full">
                       {add.content || " "}
                     </span>
                   </>
                 ) : (
-                  <span className="w-12 flex-shrink-0 bg-[#0d1117] block border-r border-gray-800/50"></span>
+                  <span className="w-12 flex-shrink-0 bg-[#09090b] block border-r border-white/5"></span>
                 )}
               </div>
             </div>
@@ -196,7 +180,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         rows.push(
           <div
             key={`chunk-${startIndex}`}
-            className="relative group border-b border-gray-800/30"
+            className="relative group border-b border-white/5"
           >
             {blockRows}
             {renderChunkActions(startIndex, endIndex)}
@@ -218,9 +202,9 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         rows.push(
           <div
             key={i}
-            className="flex hover:bg-gray-800/50 border-b border-gray-800/30 last:border-0 group transition-colors duration-75"
+            className="flex hover:bg-white/5 border-b border-white/5 last:border-0 group transition-colors duration-75"
           >
-            <div className="flex select-none w-24 flex-shrink-0 border-r border-gray-800/50">
+            <div className="flex select-none w-24 flex-shrink-0 border-r border-white/5">
               <div className="w-12 text-right pr-3 py-1 text-xs font-mono h-full flex items-start justify-end leading-relaxed text-gray-600 opacity-50">
                 {line.originalIndex}
               </div>
@@ -229,7 +213,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               </div>
             </div>
             <div className="flex-1 py-1 pl-4 overflow-hidden">
-              <span className="whitespace-pre-wrap break-all font-mono text-sm leading-relaxed text-gray-400 opacity-70">
+              <span className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-gray-400/80">
                 {"  "}
                 {line.content || " "}
               </span>
@@ -246,30 +230,26 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           const subLine = diffLines[i];
           let bgClass = "";
           let textClass = "";
-          let lineNumClass = "";
           let gutterClass = "";
 
           if (subLine.type === "add") {
             bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
             textClass = "text-emerald-200/90 opacity-100";
-            lineNumClass =
-              "text-emerald-600/50 bg-emerald-900/20 border-emerald-900/30";
             gutterClass = "text-emerald-600/50";
           } else {
             // remove
             bgClass = "bg-red-900/10 hover:bg-red-900/20";
             textClass = "text-red-200/90 opacity-100";
-            lineNumClass = "text-red-600/50 bg-red-900/20 border-red-900/30";
             gutterClass = "text-red-600/50";
           }
 
           chunkNodes.push(
             <div
               key={i}
-              className={`flex ${bgClass} border-b border-gray-800/30 last:border-0 transition-colors duration-75`}
+              className={`flex ${bgClass} border-b border-white/5 last:border-0 transition-colors duration-75`}
             >
               {/* Line Numbers */}
-              <div className="flex select-none w-24 flex-shrink-0 border-r border-gray-800/50">
+              <div className="flex select-none w-24 flex-shrink-0 border-r border-white/5">
                 <div
                   className={`w-12 text-right pr-3 py-1 text-xs font-mono h-full flex items-start justify-end leading-relaxed ${
                     subLine.type === "add" ? "opacity-0" : ""
@@ -288,7 +268,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               {/* Content */}
               <div className="flex-1 py-1 pl-4 overflow-hidden">
                 <span
-                  className={`whitespace-pre-wrap break-all font-mono text-sm leading-relaxed ${textClass}`}
+                  className={`whitespace-pre-wrap break-all font-mono text-xs leading-relaxed ${textClass}`}
                 >
                   {subLine.type === "add" && "+ "}
                   {subLine.type === "remove" && "- "}
@@ -304,7 +284,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         rows.push(
           <div
             key={`chunk-${startIndex}`}
-            className="relative group border-b border-gray-800/30"
+            className="relative group border-b border-white/5"
           >
             {chunkNodes}
             {renderChunkActions(startIndex, endIndex)}
@@ -316,31 +296,31 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden shadow-lg">
-      <div className="bg-[#161b22] px-4 py-2 flex justify-between items-center border-b border-gray-800">
+    <div className="flex flex-col h-full bg-[#1e1e1e] border border-white/5 rounded-lg overflow-hidden shadow-lg">
+      <div className="bg-[#1e1e1e] px-4 py-2 flex justify-between items-center border-b border-white/10">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <FileDiff className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm font-bold text-gray-300 uppercase tracking-wider">
-              Diff View
+            <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
+              Diff Review
             </span>
           </div>
 
           {/* Diff Stats Pill */}
-          <div className="flex items-center gap-3 px-3 py-1 bg-[#0d1117] rounded-full border border-gray-800/50">
+          <div className="flex items-center gap-3 px-3 py-1 bg-black/20 rounded-full border border-white/5">
             <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
               <span>+{stats.added}</span>
-              <span className="text-gray-600">added</span>
+              <span className="text-gray-500">added</span>
             </div>
-            <div className="w-[1px] h-3 bg-gray-800"></div>
+            <div className="w-[1px] h-3 bg-white/10"></div>
             <div className="flex items-center gap-1.5 text-xs font-medium text-red-400">
               <span>-{stats.removed}</span>
-              <span className="text-gray-600">removed</span>
+              <span className="text-gray-500">removed</span>
             </div>
           </div>
 
           {/* View Toggle */}
-          <div className="flex bg-[#0d1117] rounded-lg p-1 border border-gray-800/50">
+          <div className="flex bg-black/20 rounded-lg p-0.5 border border-white/5">
             <button
               onClick={() => setViewMode("split")}
               className={`p-1.5 rounded-md transition-all ${
@@ -378,7 +358,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           {copied ? "Copied" : "Copy Result"}
         </button>
       </div>
-      <div className="flex-1 overflow-auto bg-[#0d1117] relative scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+      <div className="flex-1 overflow-auto bg-[#1e1e1e] relative scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
         {viewMode === "split" ? renderSplitView() : renderUnifiedView()}
       </div>
     </div>

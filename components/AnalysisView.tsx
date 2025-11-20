@@ -1,12 +1,11 @@
 import React, { useState } from "react";
 import { AnalysisResult } from "../types";
 import {
-  AlertTriangle,
   Search,
-  ArrowRight,
   Quote,
   ChevronDown,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 
 interface AnalysisViewProps {
@@ -19,20 +18,20 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   isAnalyzing,
 }) => {
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
 
   if (isAnalyzing) {
     return (
-      <div className="h-full flex flex-col items-center justify-center space-y-4 animate-pulse p-12 border border-gray-800/50 rounded-xl bg-gray-900/30 backdrop-blur-sm">
+      <div className="h-full flex flex-col items-center justify-center space-y-4 animate-pulse p-12 border border-dashed border-gray-800/50 rounded-xl bg-gray-900/30">
         <div className="p-4 bg-indigo-500/10 rounded-full">
           <Search className="w-8 h-8 text-indigo-400 animate-bounce" />
         </div>
         <div className="text-center">
           <h3 className="text-indigo-300 font-medium text-lg">
-            시스템 프롬프트 분석 중
+            Analyzing Prompt
           </h3>
           <p className="text-gray-500 text-sm mt-1">
-            실패 패턴과 모순점을 찾는 중입니다...
+            Detecting failure patterns and contradictions...
           </p>
         </div>
       </div>
@@ -44,16 +43,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   return (
     <div className="space-y-4">
       {/* High Level Summary - Collapsible */}
-      <div className="bg-gradient-to-br from-gray-900 to-gray-900/50 rounded-xl border border-gray-800 shadow-sm overflow-hidden">
+      <div className="bg-white/5 rounded-xl border border-white/5 overflow-hidden">
         <button
           onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
-          className="w-full flex items-center justify-between p-4 hover:bg-gray-800/30 transition-colors"
+          className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
         >
           <div className="flex items-center gap-3">
             <div className="p-1.5 bg-indigo-500/10 rounded-md border border-indigo-500/20">
               <Search className="w-3.5 h-3.5 text-indigo-400" />
             </div>
-            <h3 className="text-base font-bold text-gray-100">진단 요약</h3>
+            <h3 className="text-sm font-semibold text-gray-200">
+              Analysis Summary
+            </h3>
           </div>
           {isSummaryExpanded ? (
             <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
@@ -64,8 +65,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
         {isSummaryExpanded && (
           <div className="px-4 pb-4 pt-0 animate-in slide-in-from-top-2 duration-200">
-            <div className="prose prose-invert max-w-none pt-2 border-t border-gray-800/50">
-              <p className="text-gray-300 leading-relaxed text-sm">
+            <div className="pt-2 border-t border-white/5">
+              <p className="text-gray-400 leading-relaxed text-xs">
                 {analysis.rawAnalysis}
               </p>
             </div>
@@ -75,8 +76,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
       {/* Failure Modes */}
       <div className="space-y-3 pt-2">
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">
-          감지된 문제점 ({analysis.failureModes?.length || 0})
+        <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider px-1">
+          Detected Issues ({analysis.failureModes?.length || 0})
         </h4>
 
         <div className="grid gap-2">
@@ -88,7 +89,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               {/* Header - Click to Expand */}
               <button
                 onClick={() => setExpanded(expanded === idx ? null : idx)}
-                className="w-full text-left p-3 border-b border-gray-800/50 bg-gradient-to-r from-red-950/10 to-transparent hover:bg-red-950/20 transition-colors flex items-start gap-3"
+                className="w-full text-left p-3 border-b border-white/5 bg-gradient-to-r from-red-900/10 to-transparent hover:from-red-900/20 transition-colors flex items-start gap-3"
               >
                 <div className="mt-0.5 p-1 bg-red-500/10 rounded flex-shrink-0">
                   {expanded === idx ? (
@@ -98,7 +99,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-red-200 text-sm truncate">
+                  <h4 className="font-medium text-red-200 text-sm truncate">
                     {mode.name}
                   </h4>
                 </div>
@@ -106,16 +107,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
               {/* Content - Collapsible */}
               {expanded === idx && (
-                <div className="p-4 bg-[#0d1117]/30 animate-in slide-in-from-top-2 duration-200">
-                  <p className="text-gray-300 text-sm mb-4 leading-relaxed border-b border-gray-800/50 pb-3">
+                <div className="p-4 bg-black/20 animate-in slide-in-from-top-2 duration-200">
+                  <p className="text-gray-300 text-xs mb-4 leading-relaxed border-b border-white/5 pb-3">
                     {mode.description}
                   </p>
 
                   {Array.isArray(mode.drivers) && mode.drivers.length > 0 && (
                     <div className="space-y-3">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                        원인 분석 (Drivers)
-                        <div className="h-[1px] flex-1 bg-gray-800/50"></div>
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                        Drivers
+                        <div className="h-[1px] flex-1 bg-white/5"></div>
                       </span>
 
                       <div className="space-y-2">
@@ -127,10 +128,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                                 <Quote className="w-2.5 h-2.5 text-gray-600" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="bg-[#0d1117] border border-gray-800 rounded px-2 py-1.5 font-mono text-xs text-red-200/90 break-words shadow-inner">
+                                <div className="bg-black/40 border border-white/5 rounded px-2 py-1.5 font-mono text-[11px] text-red-200/80 break-words shadow-inner">
                                   "{driver.line}"
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1.5 ml-1 italic">
+                                <p className="text-[11px] text-gray-500 mt-1.5 ml-1 italic">
                                   ↳ {driver.why}
                                 </p>
                               </div>
