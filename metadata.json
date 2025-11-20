@@ -1,0 +1,5 @@
+{
+  "name": "MetaPrompt Studio",
+  "description": "A professional prompt engineering tool that analyzes, diagnoses, and patches system prompts using OpenAI GPT-5.1 Reasoning (high effort). Features a Git-style diff viewer to visualize changes.",
+  "requestFramePermissions": []
+}
