@@ -22,6 +22,8 @@ import {
   Command,
   Send,
   CornerDownLeft,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import {
   analyzePromptAction,
@@ -47,6 +49,9 @@ export default function Page() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [patchPlan, setPatchPlan] = useState<PatchPlanResult | null>(null);
   const [patch, setPatch] = useState<PatchResult | null>(null);
+  const [selectedPatchIndices, setSelectedPatchIndices] = useState<Set<number>>(
+    new Set()
+  );
   const [error, setError] = useState<string | null>(null);
 
   // "editor" = normal editing, "diff" = reviewing changes
@@ -137,6 +142,7 @@ export default function Page() {
     setAnalysis(null);
     setPatchPlan(null);
     setPatch(null);
+    setSelectedPatchIndices(new Set());
     setActiveView("editor"); // Reset to editor while working
 
     try {
@@ -149,7 +155,7 @@ export default function Page() {
       setAnalysis(analysisResult);
 
       // Step 2: Plan patch (patch notes only)
-      setStep(AppStep.PATCHING);
+      // Note: We do NOT go to PATCHING immediately. We go to REVIEW.
       const plan = await planPatchAction(
         promptInput,
         analysisResult,
@@ -157,11 +163,41 @@ export default function Page() {
       );
       setPatchPlan(plan);
 
-      // Step 3: Apply patch (diff-based) to produce revised prompt for diff view
+      // Default: Select all patches
+      setSelectedPatchIndices(new Set(plan.patchNotes.map((_, i) => i)));
+
+      setStep(AppStep.REVIEW);
+      setIsPatchExpanded(true);
+    } catch (err) {
+      console.error(err);
+      setError(
+        err instanceof Error ? err.message : "An unknown error occurred"
+      );
+      setStep(AppStep.ERROR);
+    }
+  };
+
+  const handleApplyPatch = async () => {
+    if (!analysis || !patchPlan) return;
+
+    const selectedNotes = patchPlan.patchNotes.filter((_, i) =>
+      selectedPatchIndices.has(i)
+    );
+
+    if (selectedNotes.length === 0) {
+      setError("Please select at least one change to apply.");
+      return;
+    }
+
+    setStep(AppStep.PATCHING);
+    setError(null);
+
+    try {
+      // Step 3: Apply patch (diff-based) using only SELECTED notes
       const patchResult = await patchPromptAction(
         promptInput,
-        analysisResult,
-        plan,
+        analysis,
+        { patchNotes: selectedNotes },
         modelReasoning
       );
       setPatch(patchResult);
@@ -173,7 +209,7 @@ export default function Page() {
       setError(
         err instanceof Error ? err.message : "An unknown error occurred"
       );
-      setStep(AppStep.ERROR);
+      setStep(AppStep.REVIEW); // Return to review state on error
     }
   };
 
@@ -191,10 +227,21 @@ export default function Page() {
       setPromptInput(patch.revisedPrompt);
       setStep(AppStep.INPUT);
       setAnalysis(null);
+      setPatchPlan(null); // Clear plan as well
       setPatch(null);
       setError(null);
       setActiveView("editor");
     }
+  };
+
+  const togglePatchSelection = (index: number) => {
+    const next = new Set(selectedPatchIndices);
+    if (next.has(index)) {
+      next.delete(index);
+    } else {
+      next.add(index);
+    }
+    setSelectedPatchIndices(next);
   };
 
   return (
@@ -370,20 +417,23 @@ export default function Page() {
             )}
 
             {/* Patch Notes (Collapsible) */}
-            {(step === AppStep.PATCHING || patch) && (
+            {(step === AppStep.REVIEW ||
+              step === AppStep.PATCHING ||
+              step === AppStep.COMPLETE ||
+              patchPlan) && (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 {/* Patching Loading State */}
                 {step === AppStep.PATCHING && (
                   <div className="p-4 rounded-lg bg-white/5 border border-white/10 flex items-center gap-3">
                     <RotateCcw className="w-4 h-4 text-indigo-400 animate-spin" />
                     <span className="text-xs text-gray-400">
-                      Generating patches...
+                      Applying selected patches...
                     </span>
                   </div>
                 )}
 
                 {/* Patch Notes List */}
-                {patch && (
+                {patchPlan && (
                   <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg overflow-hidden">
                     <button
                       onClick={() => setIsPatchExpanded(!isPatchExpanded)}
@@ -402,18 +452,57 @@ export default function Page() {
                     {isPatchExpanded && (
                       <div className="px-4 pb-4 animate-in slide-in-from-top-2 duration-200">
                         <ul className="space-y-2">
-                          {patch.patchNotes?.map((note, i) => (
-                            <li
-                              key={i}
-                              className="text-[11px] text-emerald-200/70 pl-3 border-l-2 border-emerald-500/20 leading-relaxed"
-                            >
-                              {note}
-                            </li>
-                          ))}
+                          {patchPlan.patchNotes.map((note, i) => {
+                            const isSelected = selectedPatchIndices.has(i);
+                            const isInteractive = step === AppStep.REVIEW;
+
+                            return (
+                              <li
+                                key={i}
+                                className={`flex items-start gap-3 p-2 rounded-md transition-colors ${
+                                  isInteractive
+                                    ? "hover:bg-emerald-500/10 cursor-pointer"
+                                    : "opacity-80"
+                                }`}
+                                onClick={() =>
+                                  isInteractive && togglePatchSelection(i)
+                                }
+                              >
+                                <div
+                                  className={`mt-0.5 shrink-0 transition-colors ${
+                                    isInteractive
+                                      ? isSelected
+                                        ? "text-emerald-400"
+                                        : "text-gray-600 group-hover:text-gray-500"
+                                      : "text-emerald-400"
+                                  }`}
+                                >
+                                  {isInteractive ? (
+                                    isSelected ? (
+                                      <CheckSquare className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Square className="w-3.5 h-3.5" />
+                                    )
+                                  ) : (
+                                    // When applied (or readonly), show check if it was applied
+                                    isSelected && (
+                                      <Check className="w-3.5 h-3.5" />
+                                    )
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-emerald-200/70 leading-relaxed">
+                                  {note}
+                                </span>
+                              </li>
+                            );
+                          })}
                         </ul>
-                        <div className="mt-3 pt-3 border-t border-emerald-500/10 text-[10px] text-emerald-500/50">
-                          Check the Diff View on the left to review details.
-                        </div>
+                        {step === AppStep.COMPLETE && (
+                          <div className="mt-3 pt-3 border-t border-emerald-500/10 text-[10px] text-emerald-500/50">
+                            Diff View shows the result of applying the selected
+                            changes.
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -472,36 +561,71 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="relative bg-[#1e1e1e] rounded-xl border border-white/10 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20 transition-all shadow-sm">
-              <textarea
-                value={failureInput}
-                onChange={(e) => setFailureInput(e.target.value)}
-                className="w-full bg-transparent p-3 pr-10 font-mono text-xs text-gray-300 focus:outline-none resize-none h-20 placeholder:text-gray-600 leading-relaxed"
-                placeholder="Describe the issue or paste failure logs here..."
-                spellCheck={false}
-              />
-
-              {/* Action Button inside input */}
-              <div className="absolute bottom-2 right-2">
-                {step === AppStep.ANALYZING || step === AppStep.PATCHING ? (
-                  <div className="p-1.5 rounded-lg bg-white/5 text-gray-500 cursor-wait">
-                    <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                ) : (
+            {step === AppStep.REVIEW ? (
+              /* Apply Button Mode (When reviewing patches) */
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
+                  <span>{selectedPatchIndices.size} changes selected</span>
+                  {selectedPatchIndices.size === 0 && (
+                    <span className="text-red-400">Select at least one</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
                   <button
-                    onClick={handleRun}
-                    disabled={!promptInput.trim()}
-                    className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none group"
+                    onClick={handleReset}
+                    className="flex-1 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 text-xs font-medium transition-colors"
                   >
-                    {step === AppStep.COMPLETE ? (
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    ) : (
-                      <CornerDownLeft className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    )}
+                    Discard
                   </button>
-                )}
+                  <button
+                    onClick={handleApplyPatch}
+                    disabled={selectedPatchIndices.size === 0}
+                    className="flex-[2] py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2 text-xs font-medium"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    Apply Selected Changes
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* Standard Input Mode */
+              <div className="relative bg-[#1e1e1e] rounded-xl border border-white/10 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20 transition-all shadow-sm">
+                <textarea
+                  value={failureInput}
+                  onChange={(e) => setFailureInput(e.target.value)}
+                  className="w-full bg-transparent p-3 pr-10 font-mono text-xs text-gray-300 focus:outline-none resize-none h-20 placeholder:text-gray-600 leading-relaxed"
+                  placeholder="Describe the issue or paste failure logs here..."
+                  spellCheck={false}
+                  disabled={
+                    step === AppStep.ANALYZING || step === AppStep.PATCHING
+                  }
+                />
+
+                {/* Action Button inside input */}
+                <div className="absolute bottom-2 right-2">
+                  {step === AppStep.ANALYZING || step === AppStep.PATCHING ? (
+                    <div className="p-1.5 rounded-lg bg-white/5 text-gray-500 cursor-wait">
+                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  ) : step === AppStep.COMPLETE ? (
+                    <button
+                      onClick={handleReset}
+                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleRun}
+                      disabled={!promptInput.trim()}
+                      className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none group"
+                    >
+                      <CornerDownLeft className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="mt-3 text-[10px] text-red-400 font-mono text-center bg-red-500/10 p-2 rounded border border-red-500/20 animate-in fade-in slide-in-from-top-1">

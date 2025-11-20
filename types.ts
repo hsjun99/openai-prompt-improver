@@ -26,6 +26,7 @@ export interface PatchResult {
 export enum AppStep {
   INPUT = "INPUT",
   ANALYZING = "ANALYZING",
+  REVIEW = "REVIEW",
   PATCHING = "PATCHING",
   COMPLETE = "COMPLETE",
   ERROR = "ERROR",
