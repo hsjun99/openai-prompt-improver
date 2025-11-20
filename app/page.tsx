@@ -24,6 +24,8 @@ import {
   CornerDownLeft,
   CheckSquare,
   Square,
+  Plus,
+  User,
 } from "lucide-react";
 import {
   analyzePromptAction,
@@ -45,14 +47,19 @@ export default function Page() {
   );
   const [failureInput, setFailureInput] = useState("");
 
+  // New State: Store user's failure scenario description for display
+  const [currentScenario, setCurrentScenario] = useState<string | null>(null);
+
   const [step, setStep] = useState<AppStep>(AppStep.INPUT);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [patchPlan, setPatchPlan] = useState<PatchPlanResult | null>(null);
   const [patch, setPatch] = useState<PatchResult | null>(null);
-  const [selectedPatchIndices, setSelectedPatchIndices] = useState<Set<number>>(
-    new Set()
-  );
+
+  // Removed bulk selection state in favor of individual tracking
+  const [appliedIndices, setAppliedIndices] = useState<Set<number>>(new Set());
+  const [processingIndex, setProcessingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [diffOriginal, setDiffOriginal] = useState<string | null>(null);
 
   // "editor" = normal editing, "diff" = reviewing changes
   const [activeView, setActiveView] = useState<"editor" | "diff">("editor");
@@ -72,6 +79,7 @@ export default function Page() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
 
   // Drag handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -137,34 +145,37 @@ export default function Page() {
   const handleRun = async () => {
     if (!promptInput.trim()) return;
 
+    // Move input to scenario display state and clear input
+    setCurrentScenario(failureInput);
+    setFailureInput("");
+
     setError(null);
     setStep(AppStep.ANALYZING);
     setAnalysis(null);
     setPatchPlan(null);
     setPatch(null);
-    setSelectedPatchIndices(new Set());
+    setAppliedIndices(new Set());
+    setDiffOriginal(promptInput); // Keep original for diffing accumulated changes
     setActiveView("editor"); // Reset to editor while working
 
     try {
       // Step 1: Analyze
+      const inputToProcess = failureInput;
+
       const analysisResult = await analyzePromptAction(
         promptInput,
-        failureInput,
+        inputToProcess,
         modelReasoning
       );
       setAnalysis(analysisResult);
 
       // Step 2: Plan patch (patch notes only)
-      // Note: We do NOT go to PATCHING immediately. We go to REVIEW.
       const plan = await planPatchAction(
         promptInput,
         analysisResult,
         modelReasoning
       );
       setPatchPlan(plan);
-
-      // Default: Select all patches
-      setSelectedPatchIndices(new Set(plan.patchNotes.map((_, i) => i)));
 
       setStep(AppStep.REVIEW);
       setIsPatchExpanded(true);
@@ -174,42 +185,53 @@ export default function Page() {
         err instanceof Error ? err.message : "An unknown error occurred"
       );
       setStep(AppStep.ERROR);
+      // Restore input if error
+      setFailureInput(currentScenario || failureInput);
+      setCurrentScenario(null);
     }
   };
 
-  const handleApplyPatch = async () => {
-    if (!analysis || !patchPlan) return;
+  const handleApplySinglePatch = async (index: number) => {
+    if (!analysis || !patchPlan || processingIndex !== null) return;
 
-    const selectedNotes = patchPlan.patchNotes.filter((_, i) =>
-      selectedPatchIndices.has(i)
-    );
-
-    if (selectedNotes.length === 0) {
-      setError("Please select at least one change to apply.");
-      return;
-    }
-
-    setStep(AppStep.PATCHING);
+    setProcessingIndex(index);
     setError(null);
 
     try {
-      // Step 3: Apply patch (diff-based) using only SELECTED notes
+      const note = patchPlan.patchNotes[index];
+
+      // Step 3: Apply specific patch
+      // We pass only the single note, but we use the CURRENT promptInput
+      // because previous patches might have already modified it.
       const patchResult = await patchPromptAction(
         promptInput,
         analysis,
-        { patchNotes: selectedNotes },
+        { patchNotes: [note] },
         modelReasoning
       );
+
+      // Update editor content immediately
+      setPromptInput(patchResult.revisedPrompt);
+
+      // Set diff context so DiffViewer works
+      // We do NOT update diffOriginal here, because we want to show
+      // accumulated changes from the start of the analysis session.
       setPatch(patchResult);
 
-      // Step 4: Ready for user review / accept
-      setStep(AppStep.COMPLETE);
+      // Mark as applied
+      setAppliedIndices((prev) => {
+        const next = new Set(prev);
+        next.add(index);
+        return next;
+      });
+
+      // We do NOT switch to Diff View or Complete state
+      // We stay in REVIEW so user can apply more patches.
     } catch (err) {
       console.error(err);
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred"
-      );
-      setStep(AppStep.REVIEW); // Return to review state on error
+      setError(err instanceof Error ? err.message : "Failed to apply patch");
+    } finally {
+      setProcessingIndex(null);
     }
   };
 
@@ -218,30 +240,27 @@ export default function Page() {
     setAnalysis(null);
     setPatchPlan(null);
     setPatch(null);
+    setAppliedIndices(new Set());
+    setDiffOriginal(null);
     setError(null);
+    setCurrentScenario(null); // Clear the scenario bubble
+    setFailureInput("");
     setActiveView("editor");
   };
 
   const handleAccept = () => {
-    if (patch) {
-      setPromptInput(patch.revisedPrompt);
-      setStep(AppStep.INPUT);
-      setAnalysis(null);
-      setPatchPlan(null); // Clear plan as well
-      setPatch(null);
-      setError(null);
-      setActiveView("editor");
-    }
-  };
-
-  const togglePatchSelection = (index: number) => {
-    const next = new Set(selectedPatchIndices);
-    if (next.has(index)) {
-      next.delete(index);
-    } else {
-      next.add(index);
-    }
-    setSelectedPatchIndices(next);
+    // In the new flow, "Accept" is redundant if we are applying live,
+    // but maybe we want a "Done" button to clear the AI panel state?
+    // For now, let's just treat it as "Clear AI State".
+    setStep(AppStep.INPUT);
+    setAnalysis(null);
+    setPatchPlan(null);
+    setPatch(null);
+    setDiffOriginal(null);
+    setError(null);
+    setCurrentScenario(null); // Clear the scenario bubble
+    setFailureInput("");
+    setActiveView("editor");
   };
 
   return (
@@ -265,7 +284,7 @@ export default function Page() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-[10px] text-gray-500 px-2 py-1 bg-white/5 rounded border border-white/10">
+          <div className="flex items-center gap-2 text-xs text-gray-500 px-2 py-1 bg-white/5 rounded border border-white/10">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
             gpt-5.1
           </div>
@@ -315,8 +334,20 @@ export default function Page() {
               <div className="flex-1 flex flex-col h-full">
                 <div className="flex-1 relative overflow-hidden">
                   <DiffViewer
-                    original={promptInput}
+                    original={diffOriginal || promptInput}
                     modified={patch.revisedPrompt}
+                    onRevert={(newPrompt) => {
+                      // Handle Undo: Update promptInput with reverted content
+                      setPromptInput(newPrompt);
+                      // Note: Ideally we should also update 'patch.revisedPrompt'
+                      // to reflect the change in the diff viewer immediately.
+                      if (patch) {
+                        setPatch({
+                          ...patch,
+                          revisedPrompt: newPrompt,
+                        });
+                      }
+                    }}
                   />
                 </div>
 
@@ -337,7 +368,7 @@ export default function Page() {
                     className="px-4 py-2 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors shadow-lg shadow-indigo-500/20 flex items-center gap-2"
                   >
                     <Check className="w-3.5 h-3.5" />
-                    Accept Changes
+                    Done
                   </button>
                 </div>
               </div>
@@ -345,9 +376,16 @@ export default function Page() {
               /* Editor Mode */
               <>
                 {/* Line Numbers */}
-                <div className="w-12 bg-[#09090b] border-r border-white/5 flex flex-col items-end pt-4 pr-3 gap-[2px] text-gray-700 font-mono text-xs select-none shrink-0">
-                  {Array.from({ length: 30 }).map((_, i) => (
-                    <div key={i}>{i + 1}</div>
+                <div
+                  ref={lineNumbersRef}
+                  className="w-12 bg-[#09090b] border-r border-white/5 flex flex-col items-end pt-4 pr-3 text-gray-600 font-mono text-sm leading-6 select-none shrink-0 overflow-hidden"
+                >
+                  {Array.from({
+                    length: Math.max(promptInput.split("\n").length, 30),
+                  }).map((_, i) => (
+                    <div key={i} className="h-6">
+                      {i + 1}
+                    </div>
                   ))}
                 </div>
 
@@ -356,7 +394,13 @@ export default function Page() {
                   <textarea
                     value={promptInput}
                     onChange={(e) => setPromptInput(e.target.value)}
-                    className="absolute inset-0 w-full h-full bg-[#1e1e1e] p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none leading-relaxed selection:bg-indigo-500/20 scrollbar-thin scrollbar-thumb-gray-700"
+                    onScroll={(e) => {
+                      if (lineNumbersRef.current) {
+                        lineNumbersRef.current.scrollTop =
+                          e.currentTarget.scrollTop;
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full bg-[#1e1e1e] p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none leading-6 whitespace-pre overflow-auto selection:bg-indigo-500/20 scrollbar-thin scrollbar-thumb-gray-700"
                     placeholder="// Paste your system prompt here..."
                     spellCheck={false}
                   />
@@ -406,6 +450,22 @@ export default function Page() {
               </div>
             )}
 
+            {/* Current Scenario (User Bubble) */}
+            {currentScenario && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 mb-6">
+                <div className="flex justify-end mb-2 px-1">
+                  <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                    <User className="w-3 h-3" /> You
+                  </span>
+                </div>
+                <div className="bg-[#1e1e1e] border border-white/10 rounded-2xl rounded-tr-sm p-4 shadow-sm">
+                  <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
+                    {currentScenario}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Analysis Result */}
             {(step === AppStep.ANALYZING || analysis) && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -422,16 +482,6 @@ export default function Page() {
               step === AppStep.COMPLETE ||
               patchPlan) && (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {/* Patching Loading State */}
-                {step === AppStep.PATCHING && (
-                  <div className="p-4 rounded-lg bg-white/5 border border-white/10 flex items-center gap-3">
-                    <RotateCcw className="w-4 h-4 text-indigo-400 animate-spin" />
-                    <span className="text-xs text-gray-400">
-                      Applying selected patches...
-                    </span>
-                  </div>
-                )}
-
                 {/* Patch Notes List */}
                 {patchPlan && (
                   <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg overflow-hidden">
@@ -451,56 +501,64 @@ export default function Page() {
 
                     {isPatchExpanded && (
                       <div className="px-4 pb-4 animate-in slide-in-from-top-2 duration-200">
-                        <ul className="space-y-2">
+                        <ul className="space-y-3 px-4 pb-4">
                           {patchPlan.patchNotes.map((note, i) => {
-                            const isSelected = selectedPatchIndices.has(i);
-                            const isInteractive = step === AppStep.REVIEW;
+                            const isApplied = appliedIndices.has(i);
+                            const isProcessing = processingIndex === i;
 
                             return (
                               <li
                                 key={i}
-                                className={`flex items-start gap-3 p-2 rounded-md transition-colors ${
-                                  isInteractive
-                                    ? "hover:bg-emerald-500/10 cursor-pointer"
-                                    : "opacity-80"
+                                className={`group flex items-start justify-between gap-4 p-3 rounded-lg border transition-all ${
+                                  isApplied
+                                    ? "bg-emerald-500/10 border-emerald-500/20"
+                                    : "bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/40"
                                 }`}
-                                onClick={() =>
-                                  isInteractive && togglePatchSelection(i)
-                                }
                               >
-                                <div
-                                  className={`mt-0.5 shrink-0 transition-colors ${
-                                    isInteractive
-                                      ? isSelected
-                                        ? "text-emerald-400"
-                                        : "text-gray-600 group-hover:text-gray-500"
-                                      : "text-emerald-400"
+                                <span
+                                  className={`text-sm leading-relaxed ${
+                                    isApplied
+                                      ? "text-emerald-200/70"
+                                      : "text-gray-300"
                                   }`}
                                 >
-                                  {isInteractive ? (
-                                    isSelected ? (
-                                      <CheckSquare className="w-3.5 h-3.5" />
-                                    ) : (
-                                      <Square className="w-3.5 h-3.5" />
-                                    )
-                                  ) : (
-                                    // When applied (or readonly), show check if it was applied
-                                    isSelected && (
-                                      <Check className="w-3.5 h-3.5" />
-                                    )
-                                  )}
-                                </div>
-                                <span className="text-[11px] text-emerald-200/70 leading-relaxed">
                                   {note}
                                 </span>
+
+                                <div className="shrink-0 pt-0.5">
+                                  {isProcessing ? (
+                                    <div className="px-3 py-1.5 rounded-md bg-white/5 flex items-center justify-center">
+                                      <div className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                    </div>
+                                  ) : isApplied ? (
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 select-none">
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span className="text-[10px] font-medium uppercase tracking-wide">
+                                        Applied
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleApplySinglePatch(i)}
+                                      disabled={processingIndex !== null}
+                                      className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-500/10 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all border border-indigo-500/20 hover:border-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95"
+                                      title="Apply this change"
+                                    >
+                                      <Play className="w-3 h-3 fill-current" />
+                                      <span className="text-xs font-medium">
+                                        Apply
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
                               </li>
                             );
                           })}
                         </ul>
-                        {step === AppStep.COMPLETE && (
-                          <div className="mt-3 pt-3 border-t border-emerald-500/10 text-[10px] text-emerald-500/50">
-                            Diff View shows the result of applying the selected
-                            changes.
+                        {appliedIndices.size > 0 && (
+                          <div className="mt-3 pt-3 border-t border-emerald-500/10 text-xs text-emerald-500/50">
+                            Applied changes are reflected immediately in the
+                            System Prompt.
                           </div>
                         )}
                       </div>
@@ -522,7 +580,7 @@ export default function Page() {
               >
                 <button
                   onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 transition-colors text-[10px] text-gray-400 border border-white/5"
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 transition-colors text-xs text-gray-400 border border-white/5"
                 >
                   <Sparkles className="w-3 h-3 text-indigo-400" />
                   <span>gpt-5.1 ({modelReasoning})</span>
@@ -561,74 +619,51 @@ export default function Page() {
               </div>
             </div>
 
-            {step === AppStep.REVIEW ? (
-              /* Apply Button Mode (When reviewing patches) */
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
-                  <span>{selectedPatchIndices.size} changes selected</span>
-                  {selectedPatchIndices.size === 0 && (
-                    <span className="text-red-400">Select at least one</span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleReset}
-                    className="flex-1 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 text-xs font-medium transition-colors"
-                  >
-                    Discard
-                  </button>
-                  <button
-                    onClick={handleApplyPatch}
-                    disabled={selectedPatchIndices.size === 0}
-                    className="flex-[2] py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2 text-xs font-medium"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    Apply Selected Changes
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Standard Input Mode */
-              <div className="relative bg-[#1e1e1e] rounded-xl border border-white/10 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20 transition-all shadow-sm">
-                <textarea
-                  value={failureInput}
-                  onChange={(e) => setFailureInput(e.target.value)}
-                  className="w-full bg-transparent p-3 pr-10 font-mono text-xs text-gray-300 focus:outline-none resize-none h-20 placeholder:text-gray-600 leading-relaxed"
-                  placeholder="Describe the issue or paste failure logs here..."
-                  spellCheck={false}
-                  disabled={
-                    step === AppStep.ANALYZING || step === AppStep.PATCHING
-                  }
-                />
+            {/* Input Area */}
+            <div className="relative bg-[#1e1e1e] rounded-xl border border-white/10 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20 transition-all shadow-sm">
+              <textarea
+                value={failureInput}
+                onChange={(e) => setFailureInput(e.target.value)}
+                className="w-full bg-transparent p-3 pr-10 font-mono text-sm text-gray-300 focus:outline-none resize-none h-20 placeholder:text-gray-600 leading-relaxed"
+                placeholder="Describe the issue or paste failure logs here..."
+                spellCheck={false}
+                disabled={
+                  step === AppStep.ANALYZING ||
+                  step === AppStep.PATCHING ||
+                  processingIndex !== null
+                }
+              />
 
-                {/* Action Button inside input */}
-                <div className="absolute bottom-2 right-2">
-                  {step === AppStep.ANALYZING || step === AppStep.PATCHING ? (
-                    <div className="p-1.5 rounded-lg bg-white/5 text-gray-500 cursor-wait">
-                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                  ) : step === AppStep.COMPLETE ? (
-                    <button
-                      onClick={handleReset}
-                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleRun}
-                      disabled={!promptInput.trim()}
-                      className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none group"
-                    >
-                      <CornerDownLeft className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-                  )}
-                </div>
+              {/* Action Button inside input */}
+              <div className="absolute bottom-2 right-2">
+                {step === AppStep.ANALYZING ||
+                step === AppStep.PATCHING ||
+                processingIndex !== null ? (
+                  <div className="p-1.5 rounded-lg bg-white/5 text-gray-500 cursor-wait">
+                    <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : step === AppStep.REVIEW ? (
+                  <button
+                    onClick={handleAccept}
+                    className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                    title="Finish Review"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleRun}
+                    disabled={!promptInput.trim()}
+                    className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none group"
+                  >
+                    <CornerDownLeft className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                )}
               </div>
-            )}
+            </div>
 
             {error && (
-              <div className="mt-3 text-[10px] text-red-400 font-mono text-center bg-red-500/10 p-2 rounded border border-red-500/20 animate-in fade-in slide-in-from-top-1">
+              <div className="mt-3 text-xs text-red-400 font-mono text-center bg-red-500/10 p-2 rounded border border-red-500/20 animate-in fade-in slide-in-from-top-1">
                 {error}
               </div>
             )}
