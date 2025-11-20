@@ -16,6 +16,18 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     () => computeLineDiff(original, modified),
     [original, modified]
   );
+
+  // Compute stats
+  const stats = useMemo(() => {
+    let added = 0;
+    let removed = 0;
+    diffLines.forEach((line) => {
+      if (line.type === "add") added++;
+      if (line.type === "remove") removed++;
+    });
+    return { added, removed };
+  }, [diffLines]);
+
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<"split" | "unified">("split");
 
@@ -36,21 +48,21 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         rows.push(
           <div
             key={i}
-            className="grid grid-cols-2 hover:bg-gray-800 group border-b border-gray-800/50 last:border-0"
+            className="grid grid-cols-2 hover:bg-gray-800/50 group border-b border-gray-800/30 last:border-0 transition-colors duration-75"
           >
             <div className="flex text-gray-400">
-              <span className="w-10 flex-shrink-0 text-right pr-3 select-none text-gray-600 text-xs py-0.5 bg-gray-900/50 border-r border-gray-800">
+              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-[10px] font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50">
                 {line.originalIndex}
               </span>
-              <span className="whitespace-pre-wrap break-all font-mono text-xs py-0.5 pl-2">
+              <span className="whitespace-pre-wrap break-all font-mono text-xs py-1 pl-4 opacity-70">
                 {line.content}
               </span>
             </div>
             <div className="flex text-gray-400">
-              <span className="w-10 flex-shrink-0 text-right pr-3 select-none text-gray-600 text-xs py-0.5 bg-gray-900/50 border-r border-gray-800">
+              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-[10px] font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50">
                 {line.modifiedIndex}
               </span>
-              <span className="whitespace-pre-wrap break-all font-mono text-xs py-0.5 pl-2">
+              <span className="whitespace-pre-wrap break-all font-mono text-xs py-1 pl-4 opacity-70">
                 {line.content}
               </span>
             </div>
@@ -80,21 +92,21 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           rows.push(
             <div
               key={`${i}-${j}`}
-              className="grid grid-cols-2 group border-b border-gray-800/50 last:border-0"
+              className="grid grid-cols-2 group border-b border-gray-800/30 last:border-0"
             >
               {/* LEFT SIDE (Original/Removed) */}
               <div className={`flex ${rem ? "bg-red-900/10" : ""}`}>
                 {rem ? (
                   <>
-                    <span className="w-10 flex-shrink-0 text-right pr-3 select-none text-red-600/50 text-xs py-0.5 bg-red-900/20 border-r border-red-900/30">
+                    <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-red-500/50 text-[10px] font-mono py-1 bg-red-900/20 border-r border-red-900/20">
                       {rem.originalIndex}
                     </span>
-                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-red-300 py-0.5 pl-2">
+                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-red-200/90 py-1 pl-4">
                       {rem.content}
                     </span>
                   </>
                 ) : (
-                  <span className="w-10 flex-shrink-0 bg-gray-900/30 block border-r border-gray-800"></span>
+                  <span className="w-12 flex-shrink-0 bg-[#0d1117] block border-r border-gray-800/50"></span>
                 )}
               </div>
 
@@ -102,15 +114,15 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               <div className={`flex ${add ? "bg-emerald-900/10" : ""}`}>
                 {add ? (
                   <>
-                    <span className="w-10 flex-shrink-0 text-right pr-3 select-none text-emerald-600/50 text-xs py-0.5 bg-emerald-900/20 border-r border-emerald-900/30">
+                    <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-emerald-500/50 text-[10px] font-mono py-1 bg-emerald-900/20 border-r border-emerald-900/20">
                       {add.modifiedIndex}
                     </span>
-                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-emerald-300 py-0.5 pl-2">
+                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-emerald-200/90 py-1 pl-4">
                       {add.content}
                     </span>
                   </>
                 ) : (
-                  <span className="w-10 flex-shrink-0 bg-gray-900/30 block border-r border-gray-800"></span>
+                  <span className="w-12 flex-shrink-0 bg-[#0d1117] block border-r border-gray-800/50"></span>
                 )}
               </div>
             </div>
@@ -123,20 +135,21 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
   const renderUnifiedView = () => {
     return diffLines.map((line, i) => {
-      let bgClass = "hover:bg-gray-800";
-      let textClass = "text-gray-400";
-      let lineNumClass = "text-gray-600 bg-gray-900/50 border-gray-800";
+      let bgClass = "hover:bg-gray-800/50";
+      let textClass = "text-gray-400 opacity-70";
+      let lineNumClass =
+        "text-gray-600 bg-[#0d1117] border-gray-800/50 opacity-50";
       let gutterClass = "text-gray-600";
 
       if (line.type === "add") {
         bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
-        textClass = "text-emerald-300";
+        textClass = "text-emerald-200/90 opacity-100";
         lineNumClass =
           "text-emerald-600/50 bg-emerald-900/20 border-emerald-900/30";
         gutterClass = "text-emerald-600/50";
       } else if (line.type === "remove") {
         bgClass = "bg-red-900/10 hover:bg-red-900/20";
-        textClass = "text-red-300";
+        textClass = "text-red-200/90 opacity-100";
         lineNumClass = "text-red-600/50 bg-red-900/20 border-red-900/30";
         gutterClass = "text-red-600/50";
       }
@@ -144,19 +157,19 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       return (
         <div
           key={i}
-          className={`flex ${bgClass} border-b border-gray-800/50 last:border-0 group`}
+          className={`flex ${bgClass} border-b border-gray-800/30 last:border-0 group transition-colors duration-75`}
         >
           {/* Line Numbers */}
-          <div className="flex select-none w-20 flex-shrink-0 border-r border-gray-800">
+          <div className="flex select-none w-24 flex-shrink-0 border-r border-gray-800/50">
             <div
-              className={`w-10 text-right pr-2 py-0.5 text-xs ${
+              className={`w-12 text-right pr-3 py-1 text-[10px] font-mono ${
                 line.type === "add" ? "opacity-0" : ""
               } ${gutterClass}`}
             >
               {line.originalIndex}
             </div>
             <div
-              className={`w-10 text-right pr-2 py-0.5 text-xs ${
+              className={`w-12 text-right pr-3 py-1 text-[10px] font-mono ${
                 line.type === "remove" ? "opacity-0" : ""
               } ${gutterClass}`}
             >
@@ -164,7 +177,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             </div>
           </div>
           {/* Content */}
-          <div className="flex-1 py-0.5 pl-2 overflow-hidden">
+          <div className="flex-1 py-1 pl-4 overflow-hidden">
             <span
               className={`whitespace-pre-wrap break-all font-mono text-xs ${textClass}`}
             >
@@ -180,56 +193,69 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 border border-gray-800 rounded-lg overflow-hidden shadow-2xl">
-      <div className="bg-gray-800 px-4 py-2 flex justify-between items-center border-b border-gray-700">
+    <div className="flex flex-col h-full bg-[#0d1117] border border-gray-800 rounded-lg overflow-hidden shadow-lg">
+      <div className="bg-[#161b22] px-4 py-2 flex justify-between items-center border-b border-gray-800">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <FileDiff className="w-4 h-4 text-indigo-400" />
-            <span className="text-xs font-medium text-gray-300 uppercase tracking-wider">
+            <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
               Diff View
             </span>
           </div>
 
+          {/* Diff Stats Pill */}
+          <div className="flex items-center gap-3 px-3 py-1 bg-[#0d1117] rounded-full border border-gray-800/50">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+              <span>+{stats.added}</span>
+              <span className="text-gray-600">added</span>
+            </div>
+            <div className="w-[1px] h-3 bg-gray-800"></div>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-red-400">
+              <span>-{stats.removed}</span>
+              <span className="text-gray-600">removed</span>
+            </div>
+          </div>
+
           {/* View Toggle */}
-          <div className="flex bg-gray-900 rounded p-0.5">
+          <div className="flex bg-[#0d1117] rounded-lg p-1 border border-gray-800/50">
             <button
               onClick={() => setViewMode("split")}
-              className={`p-1 rounded ${
+              className={`p-1.5 rounded-md transition-all ${
                 viewMode === "split"
-                  ? "bg-gray-700 text-white shadow"
+                  ? "bg-indigo-500/20 text-indigo-300 shadow-sm"
                   : "text-gray-500 hover:text-gray-300"
               }`}
               title="Split View"
             >
-              <Columns className="w-3 h-3" />
+              <Columns className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => setViewMode("unified")}
-              className={`p-1 rounded ${
+              className={`p-1.5 rounded-md transition-all ${
                 viewMode === "unified"
-                  ? "bg-gray-700 text-white shadow"
+                  ? "bg-indigo-500/20 text-indigo-300 shadow-sm"
                   : "text-gray-500 hover:text-gray-300"
               }`}
               title="Unified View"
             >
-              <List className="w-3 h-3" />
+              <List className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
         <button
           onClick={handleCopy}
-          className="flex items-center gap-2 px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-all hover:shadow-lg shadow-indigo-900/20"
         >
           {copied ? (
-            <Check className="w-3 h-3" />
+            <Check className="w-3.5 h-3.5" />
           ) : (
-            <Copy className="w-3 h-3" />
+            <Copy className="w-3.5 h-3.5" />
           )}
-          {copied ? "Copied" : "Copy Improved"}
+          {copied ? "Copied" : "Copy Result"}
         </button>
       </div>
-      <div className="flex-1 overflow-auto bg-[#0d1117] relative">
+      <div className="flex-1 overflow-auto bg-[#0d1117] relative scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
         {viewMode === "split" ? renderSplitView() : renderUnifiedView()}
       </div>
     </div>

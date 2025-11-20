@@ -279,6 +279,7 @@ export const patchPrompt = async (
   analysis: AnalysisResult,
   patchPlan: PatchPlanResult
 ): Promise<PatchResult> => {
+  const MAX_PATCH_ATTEMPTS = 5;
   const client = getClient();
   console.log("patchPrompt: patch notes", patchPlan.patchNotes);
 
@@ -312,7 +313,7 @@ V4A formatting rules (non-negotiable):
 5. Never emit natural language outside of apply_patch calls and never restate the entire file unless a patch note requires a full rewrite.
 `;
 
-  const response = await client.responses.create({
+  let response = await client.responses.create({
     model: MODEL_NAME,
     reasoning: { effort: "low" },
     stream: false,
@@ -321,208 +322,253 @@ V4A formatting rules (non-negotiable):
   });
   console.log("patchPrompt: response id", response.id);
 
-  const patchCalls = (response.output ?? []).filter(
-    (item: any) => item.type === "apply_patch_call"
-  );
-  console.log(
-    "patchPrompt: received apply_patch calls",
-    patchCalls.length,
-    patchCalls.map((c: any) => ({
-      callId: c.call_id,
-      type: c.operation?.type,
-      path: c.operation?.path,
-      diffLength:
-        typeof c.operation?.diff === "string"
-          ? c.operation.diff.length
-          : undefined,
-    }))
-  );
-
-  if (!patchCalls.length) {
-    console.error(
-      "No apply_patch_call found in patchPrompt response:",
-      response
-    );
-    return {
-      revisedPrompt: originalPrompt,
-      patchNotes: [
-        "Error: Model did not emit any apply_patch operations. No changes applied.",
-      ],
-    };
-  }
-
   let currentPrompt = originalPrompt;
-  const applyOutputs: Array<{
+  let latestApplyOutputs: Array<{
     callId?: string;
     status: "completed" | "failed";
     message: string;
   }> = [];
+  let patchingCompleted = false;
 
-  type V4AAction = "add" | "update" | "delete" | "unknown";
-
-  const stripV4APatch = (
-    rawDiff: string
-  ): { body: string; action: V4AAction } => {
-    const normalized = rawDiff.replace(/\r\n/g, "\n");
-    const beginMarker = "*** Begin Patch";
-    const endMarker = "*** End Patch";
-
-    let body = normalized;
-    const beginIndex = normalized.indexOf(beginMarker);
-    if (beginIndex >= 0) {
-      body = normalized.slice(beginIndex + beginMarker.length);
-    }
-
-    const endIndex = body.indexOf(endMarker);
-    if (endIndex >= 0) {
-      body = body.slice(0, endIndex);
-    }
-
-    let action: V4AAction = "unknown";
-    const headerMatch = body.match(
-      /\*\*\* (Update|Add|Create|Delete) File:[^\n]*/
+  for (let attempt = 0; attempt < MAX_PATCH_ATTEMPTS; attempt++) {
+    const patchCalls = (response.output ?? []).filter(
+      (item: any) => item.type === "apply_patch_call"
     );
-    if (headerMatch) {
-      const header = headerMatch[0];
-      if (header.includes("Update")) action = "update";
-      else if (header.includes("Delete")) action = "delete";
-      else action = "add";
-      const headerEnd = (headerMatch.index ?? 0) + header.length;
-      body = body.slice(headerEnd);
-    }
+    console.log(
+      "patchPrompt: received apply_patch calls",
+      patchCalls.length,
+      patchCalls.map((c: any) => ({
+        callId: c.call_id,
+        type: c.operation?.type,
+        path: c.operation?.path,
+        diffLength:
+          typeof c.operation?.diff === "string"
+            ? c.operation.diff.length
+            : undefined,
+      }))
+    );
 
-    return { body: body.replace(/^\s+/, ""), action };
-  };
-
-  const applyV4APatch = (
-    base: string,
-    diff: string,
-    intent: "create" | "update"
-  ): { result: string | null; note?: string } => {
-    const prepared = stripV4APatch(diff);
-    if (!prepared.body.trim()) {
-      return { result: null, note: "Empty diff body" };
-    }
-
-    if (intent === "create" && prepared.action === "delete") {
-      return { result: null, note: "Diff requests delete operation" };
-    }
-
-    try {
-      const mode = intent === "create" ? "create" : "default";
-      const output = applyDiff(base, prepared.body, mode);
-      return { result: output };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to apply diff";
-      console.error("patchPrompt: applyDiff threw", message);
-      return { result: null, note: message };
-    }
-  };
-
-  const validatePath = (opPath: string | undefined): boolean => {
-    if (typeof opPath !== "string" || !opPath.trim()) return false;
-    if (opPath.includes("..")) return false;
-    // For now we only allow the target system_prompt.txt.
-    return opPath === "system_prompt.txt";
-  };
-
-  for (const call of patchCalls) {
-    const op = (call as any).operation;
-    const callId = (call as any).call_id;
-
-    if (!op || !validatePath(op.path)) {
-      const msg = `Invalid or disallowed path in apply_patch operation: ${op?.path}`;
-      console.error(msg);
-      applyOutputs.push({ callId, status: "failed", message: msg });
-      continue;
-    }
-
-    if (op.type === "delete_file") {
-      // Not supported for system_prompt.txt in this flow.
-      const msg = "delete_file is not supported for system_prompt.txt";
-      console.error(msg);
-      applyOutputs.push({ callId, status: "failed", message: msg });
-      continue;
-    }
-
-    if (op.type === "create_file") {
-      // Treat create as applying diff against empty content.
-      const diff = op.diff;
-      if (typeof diff !== "string" || !diff.trim()) {
-        const msg = "create_file missing diff content";
-        console.error(msg);
-        applyOutputs.push({ callId, status: "failed", message: msg });
-        continue;
-      }
-      const { result, note } = applyV4APatch("", diff, "create");
-      if (result === null) {
-        const msg = `Failed to apply create_file diff${
-          note ? `: ${note}` : ""
-        }`;
-        console.error(msg);
-        applyOutputs.push({ callId, status: "failed", message: msg });
-        continue;
-      }
-      currentPrompt = result;
-      applyOutputs.push({
-        callId,
-        status: "completed",
-        message: "Created system_prompt.txt from diff",
-      });
-      continue;
-    }
-
-    if (op.type === "update_file") {
-      const diff = op.diff;
-      if (typeof diff !== "string" || !diff.trim()) {
-        const msg = "update_file missing diff content";
-        console.error(msg);
-        applyOutputs.push({ callId, status: "failed", message: msg });
-        continue;
-      }
-
-      console.log(
-        "patchPrompt: applying V4A diff",
-        `len=${diff.length}`,
-        diff.slice(0, 200) + (diff.length > 200 ? "..." : "")
+    if (!patchCalls.length) {
+      console.error(
+        "No apply_patch_call found in patchPrompt response:",
+        response
       );
+      break;
+    }
 
-      const { result, note } = applyV4APatch(currentPrompt, diff, "update");
-      if (result === null) {
-        const msg = `Failed to apply update_file diff${
-          note ? `: ${note}` : ""
-        }`;
+    latestApplyOutputs = [];
+
+    type V4AAction = "add" | "update" | "delete" | "unknown";
+
+    const stripV4APatch = (
+      rawDiff: string
+    ): { body: string; action: V4AAction } => {
+      const normalized = rawDiff.replace(/\r\n/g, "\n");
+      const beginMarker = "*** Begin Patch";
+      const endMarker = "*** End Patch";
+
+      let body = normalized;
+      const beginIndex = normalized.indexOf(beginMarker);
+      if (beginIndex >= 0) {
+        body = normalized.slice(beginIndex + beginMarker.length);
+      }
+
+      const endIndex = body.indexOf(endMarker);
+      if (endIndex >= 0) {
+        body = body.slice(0, endIndex);
+      }
+
+      let action: V4AAction = "unknown";
+      const headerMatch = body.match(
+        /\*\*\* (Update|Add|Create|Delete) File:[^\n]*/
+      );
+      if (headerMatch) {
+        const header = headerMatch[0];
+        if (header.includes("Update")) action = "update";
+        else if (header.includes("Delete")) action = "delete";
+        else action = "add";
+        const headerEnd = (headerMatch.index ?? 0) + header.length;
+        body = body.slice(headerEnd);
+      }
+
+      return { body: body.replace(/^\s+/, ""), action };
+    };
+
+    const applyV4APatch = (
+      base: string,
+      diff: string,
+      intent: "create" | "update"
+    ): { result: string | null; note?: string } => {
+      const prepared = stripV4APatch(diff);
+      if (!prepared.body.trim()) {
+        return { result: null, note: "Empty diff body" };
+      }
+
+      if (intent === "create" && prepared.action === "delete") {
+        return { result: null, note: "Diff requests delete operation" };
+      }
+
+      try {
+        const mode = intent === "create" ? "create" : "default";
+        const output = applyDiff(base, prepared.body, mode);
+        return { result: output };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to apply diff";
+        console.error("patchPrompt: applyDiff threw", message);
+        return { result: null, note: message };
+      }
+    };
+
+    const validatePath = (opPath: string | undefined): boolean => {
+      if (typeof opPath !== "string" || !opPath.trim()) return false;
+      if (opPath.includes("..")) return false;
+      // For now we only allow the target system_prompt.txt.
+      return opPath === "system_prompt.txt";
+    };
+
+    for (const call of patchCalls) {
+      const op = (call as any).operation;
+      const callId = (call as any).call_id;
+
+      if (!op || !validatePath(op.path)) {
+        const msg = `Invalid or disallowed path in apply_patch operation: ${op?.path}`;
         console.error(msg);
-        applyOutputs.push({ callId, status: "failed", message: msg });
+        latestApplyOutputs.push({ callId, status: "failed", message: msg });
         continue;
       }
 
-      const diffLines = computeLineDiff(currentPrompt, result);
-      const addCount = diffLines.filter((d) => d.type === "add").length;
-      const removeCount = diffLines.filter((d) => d.type === "remove").length;
-      console.log("patchPrompt: post-apply diff stats", {
-        originalLength: currentPrompt.length,
-        revisedLength: result.length,
-        addCount,
-        removeCount,
+      if (op.type === "delete_file") {
+        // Not supported for system_prompt.txt in this flow.
+        const msg = "delete_file is not supported for system_prompt.txt";
+        console.error(msg);
+        latestApplyOutputs.push({ callId, status: "failed", message: msg });
+        continue;
+      }
+
+      if (op.type === "create_file") {
+        // Treat create as applying diff against empty content.
+        const diff = op.diff;
+        if (typeof diff !== "string" || !diff.trim()) {
+          const msg = "create_file missing diff content";
+          console.error(msg);
+          latestApplyOutputs.push({ callId, status: "failed", message: msg });
+          continue;
+        }
+        const { result, note } = applyV4APatch("", diff, "create");
+        if (result === null) {
+          const msg = `Failed to apply create_file diff${
+            note ? `: ${note}` : ""
+          }`;
+          console.error(msg);
+          latestApplyOutputs.push({ callId, status: "failed", message: msg });
+          continue;
+        }
+        currentPrompt = result;
+        latestApplyOutputs.push({
+          callId,
+          status: "completed",
+          message: "Created system_prompt.txt from diff",
+        });
+        continue;
+      }
+
+      if (op.type === "update_file") {
+        const diff = op.diff;
+        if (typeof diff !== "string" || !diff.trim()) {
+          const msg = "update_file missing diff content";
+          console.error(msg);
+          latestApplyOutputs.push({ callId, status: "failed", message: msg });
+          continue;
+        }
+
+        console.log(
+          "patchPrompt: applying V4A diff",
+          `len=${diff.length}`,
+          diff.slice(0, 200) + (diff.length > 200 ? "..." : "")
+        );
+
+        const { result, note } = applyV4APatch(currentPrompt, diff, "update");
+        if (result === null) {
+          const msg = `Failed to apply update_file diff${
+            note ? `: ${note}` : ""
+          }`;
+          console.error(msg);
+          latestApplyOutputs.push({ callId, status: "failed", message: msg });
+          continue;
+        }
+
+        const diffLines = computeLineDiff(currentPrompt, result);
+        const addCount = diffLines.filter((d) => d.type === "add").length;
+        const removeCount = diffLines.filter((d) => d.type === "remove").length;
+        console.log("patchPrompt: post-apply diff stats", {
+          originalLength: currentPrompt.length,
+          revisedLength: result.length,
+          addCount,
+          removeCount,
+        });
+
+        currentPrompt = result;
+        latestApplyOutputs.push({
+          callId,
+          status: "completed",
+          message: `Applied update_file diff (+${addCount}/-${removeCount})`,
+        });
+        continue;
+      }
+
+      const msg = `Unsupported apply_patch operation type: ${op.type}`;
+      console.error(msg);
+      latestApplyOutputs.push({ callId, status: "failed", message: msg });
+    }
+
+    const failedOutputs = latestApplyOutputs.filter(
+      (output) => output.status === "failed"
+    );
+
+    if (failedOutputs.length) {
+      const callOutputs = latestApplyOutputs
+        .filter((output) => output.callId)
+        .map((output) => ({
+          type: "apply_patch_call_output" as const,
+          call_id: output.callId!,
+          status: output.status,
+          output: output.message,
+        }));
+
+      if (!callOutputs.length) {
+        break;
+      }
+
+      response = await client.responses.create({
+        model: MODEL_NAME,
+        reasoning: { effort: "low" },
+        stream: false,
+        previous_response_id: response.id,
+        tools: [{ type: "apply_patch" }],
+        input: callOutputs,
       });
 
-      currentPrompt = result;
-      applyOutputs.push({
-        callId,
-        status: "completed",
-        message: `Applied update_file diff (+${addCount}/-${removeCount})`,
-      });
       continue;
     }
 
-    const msg = `Unsupported apply_patch operation type: ${op.type}`;
-    console.error(msg);
-    applyOutputs.push({ callId, status: "failed", message: msg });
+    patchingCompleted = true;
+    break;
   }
 
-  if (!applyOutputs.some((o) => o.status === "completed")) {
+  if (!patchingCompleted) {
+    return {
+      revisedPrompt: currentPrompt,
+      patchNotes: [
+        "Error: apply_patch retries exhausted before completing the patch plan.",
+      ],
+    };
+  }
+
+  if (
+    !latestApplyOutputs.length ||
+    !latestApplyOutputs.some((o) => o.status === "completed")
+  ) {
     return {
       revisedPrompt: originalPrompt,
       patchNotes: [
