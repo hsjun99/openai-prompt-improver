@@ -624,6 +624,33 @@ export default function Page() {
               <textarea
                 value={failureInput}
                 onChange={(e) => setFailureInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+
+                    if (
+                      step === AppStep.ANALYZING ||
+                      step === AppStep.PATCHING ||
+                      processingIndex !== null
+                    ) {
+                      return;
+                    }
+
+                    if (step === AppStep.REVIEW) {
+                      if (failureInput.trim()) {
+                        handleRun();
+                      } else {
+                        handleAccept();
+                      }
+                    } else {
+                      handleRun();
+                    }
+                  }
+                }}
                 className="w-full bg-transparent p-3 pr-10 font-mono text-sm text-gray-300 focus:outline-none resize-none h-20 placeholder:text-gray-600 leading-relaxed"
                 placeholder="Describe the issue or paste failure logs here..."
                 spellCheck={false}
