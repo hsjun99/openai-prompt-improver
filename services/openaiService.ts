@@ -1,3 +1,5 @@
+import "server-only";
+
 import OpenAI from "openai";
 import { applyDiff } from "@openai/agents";
 import { AnalysisResult, PatchPlanResult, PatchResult } from "../types";
@@ -20,7 +22,6 @@ const getClient = (): OpenAI => {
 
   openai = new OpenAI({
     apiKey,
-    dangerouslyAllowBrowser: true,
   });
 
   return openai;
