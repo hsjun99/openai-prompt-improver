@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import { DiffLine } from "../types";
 import { computeLineDiff } from "../utils/diff";
 import { FileDiff, Copy, Check, Columns, List, Undo2 } from "lucide-react";
@@ -32,6 +32,26 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
 
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<"split" | "unified">("split");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to first diff on change
+  useEffect(() => {
+    if (containerRef.current) {
+      // Allow render cycle to complete
+      setTimeout(() => {
+        if (!containerRef.current) return;
+        // Find the first element that indicates a change.
+        // We look for background colors associated with add (emerald) or remove (red).
+        const firstDiff = containerRef.current.querySelector(
+          ".bg-emerald-900\\/10, .bg-red-900\\/10"
+        );
+
+        if (firstDiff) {
+          firstDiff.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
+    }
+  }, [diffLines, viewMode]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(modified);
@@ -358,7 +378,10 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           {copied ? "Copied" : "Copy Result"}
         </button>
       </div>
-      <div className="flex-1 overflow-auto bg-[#1e1e1e] relative scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-auto bg-[#1e1e1e] relative scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
+      >
         {viewMode === "split" ? renderSplitView() : renderUnifiedView()}
       </div>
     </div>
