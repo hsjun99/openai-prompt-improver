@@ -9,22 +9,25 @@ import { AnalysisResult, PatchPlanResult, PatchResult } from "../types";
 
 export async function analyzePromptAction(
   systemPrompt: string,
-  failures: string
+  failures: string,
+  reasoningEffort: "low" | "medium" | "high"
 ): Promise<AnalysisResult> {
-  return await analyzePrompt(systemPrompt, failures);
+  return await analyzePrompt(systemPrompt, failures, reasoningEffort);
 }
 
 export async function planPatchAction(
   systemPrompt: string,
-  analysis: AnalysisResult
+  analysis: AnalysisResult,
+  reasoningEffort: "low" | "medium" | "high"
 ): Promise<PatchPlanResult> {
-  return await planPatch(systemPrompt, analysis);
+  return await planPatch(systemPrompt, analysis, reasoningEffort);
 }
 
 export async function patchPromptAction(
   systemPrompt: string,
   analysis: AnalysisResult,
-  plan: PatchPlanResult
+  plan: PatchPlanResult,
+  reasoningEffort: "low" | "medium" | "high"
 ): Promise<PatchResult> {
-  return await patchPrompt(systemPrompt, analysis, plan);
+  return await patchPrompt(systemPrompt, analysis, plan, reasoningEffort);
 }

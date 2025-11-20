@@ -52,7 +52,8 @@ const extractResponseText = (response: ModelResponse): string => {
 
 export const analyzePrompt = async (
   systemPrompt: string,
-  failures: string
+  failures: string,
+  reasoningEffort: "low" | "medium" | "high" = "low"
 ): Promise<AnalysisResult> => {
   const client = getClient();
 
@@ -102,7 +103,7 @@ export const analyzePrompt = async (
 
   const response = await client.responses.create({
     model: MODEL_NAME,
-    reasoning: { effort: "low" },
+    reasoning: { effort: reasoningEffort },
     stream: false,
     input: [
       {
@@ -190,7 +191,8 @@ export const analyzePrompt = async (
 
 export const planPatch = async (
   originalPrompt: string,
-  analysis: AnalysisResult
+  analysis: AnalysisResult,
+  reasoningEffort: "low" | "medium" | "high" = "low"
 ): Promise<PatchPlanResult> => {
   const client = getClient();
 
@@ -236,7 +238,7 @@ export const planPatch = async (
 
   const response = await client.responses.create({
     model: MODEL_NAME,
-    reasoning: { effort: "low" },
+    reasoning: { effort: reasoningEffort },
     stream: false,
     input: [
       {
@@ -277,7 +279,8 @@ export const planPatch = async (
 export const patchPrompt = async (
   originalPrompt: string,
   analysis: AnalysisResult,
-  patchPlan: PatchPlanResult
+  patchPlan: PatchPlanResult,
+  reasoningEffort: "low" | "medium" | "high" = "low"
 ): Promise<PatchResult> => {
   const MAX_PATCH_ATTEMPTS = 5;
   const client = getClient();
@@ -315,7 +318,7 @@ V4A formatting rules (non-negotiable):
 
   let response = await client.responses.create({
     model: MODEL_NAME,
-    reasoning: { effort: "low" },
+    reasoning: { effort: reasoningEffort },
     stream: false,
     tools: [{ type: "apply_patch" }],
     input: prompt,
@@ -542,7 +545,7 @@ V4A formatting rules (non-negotiable):
 
       response = await client.responses.create({
         model: MODEL_NAME,
-        reasoning: { effort: "low" },
+        reasoning: { effort: reasoningEffort },
         stream: false,
         previous_response_id: response.id,
         tools: [{ type: "apply_patch" }],

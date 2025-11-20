@@ -51,19 +51,19 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             className="grid grid-cols-2 hover:bg-gray-800/50 group border-b border-gray-800/30 last:border-0 transition-colors duration-75"
           >
             <div className="flex text-gray-400">
-              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-[10px] font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50">
+              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-[10px] font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50 h-full flex items-start justify-end leading-relaxed">
                 {line.originalIndex}
               </span>
-              <span className="whitespace-pre-wrap break-all font-mono text-xs py-1 pl-4 opacity-70">
-                {line.content}
+              <span className="whitespace-pre-wrap break-all font-mono text-xs py-1 pl-4 opacity-70 leading-relaxed">
+                {line.content || " "}
               </span>
             </div>
             <div className="flex text-gray-400">
-              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-[10px] font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50">
+              <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-gray-600 text-[10px] font-mono py-1 bg-[#0d1117] border-r border-gray-800/50 opacity-50 h-full flex items-start justify-end leading-relaxed">
                 {line.modifiedIndex}
               </span>
-              <span className="whitespace-pre-wrap break-all font-mono text-xs py-1 pl-4 opacity-70">
-                {line.content}
+              <span className="whitespace-pre-wrap break-all font-mono text-xs py-1 pl-4 opacity-70 leading-relaxed">
+                {line.content || " "}
               </span>
             </div>
           </div>
@@ -98,11 +98,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               <div className={`flex ${rem ? "bg-red-900/10" : ""}`}>
                 {rem ? (
                   <>
-                    <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-red-500/50 text-[10px] font-mono py-1 bg-red-900/20 border-r border-red-900/20">
+                    <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-red-500/50 text-[10px] font-mono py-1 bg-red-900/20 border-r border-red-900/20 h-full flex items-start justify-end leading-relaxed">
                       {rem.originalIndex}
                     </span>
-                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-red-200/90 py-1 pl-4">
-                      {rem.content}
+                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-red-200/90 py-1 pl-4 leading-relaxed">
+                      {rem.content || " "}
                     </span>
                   </>
                 ) : (
@@ -114,11 +114,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               <div className={`flex ${add ? "bg-emerald-900/10" : ""}`}>
                 {add ? (
                   <>
-                    <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-emerald-500/50 text-[10px] font-mono py-1 bg-emerald-900/20 border-r border-emerald-900/20">
+                    <span className="w-12 flex-shrink-0 text-right pr-4 select-none text-emerald-500/50 text-[10px] font-mono py-1 bg-emerald-900/20 border-r border-emerald-900/20 h-full flex items-start justify-end leading-relaxed">
                       {add.modifiedIndex}
                     </span>
-                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-emerald-200/90 py-1 pl-4">
-                      {add.content}
+                    <span className="whitespace-pre-wrap break-all font-mono text-xs text-emerald-200/90 py-1 pl-4 leading-relaxed">
+                      {add.content || " "}
                     </span>
                   </>
                 ) : (
@@ -162,14 +162,14 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           {/* Line Numbers */}
           <div className="flex select-none w-24 flex-shrink-0 border-r border-gray-800/50">
             <div
-              className={`w-12 text-right pr-3 py-1 text-[10px] font-mono ${
+              className={`w-12 text-right pr-3 py-1 text-[10px] font-mono h-full flex items-start justify-end leading-relaxed ${
                 line.type === "add" ? "opacity-0" : ""
               } ${gutterClass}`}
             >
               {line.originalIndex}
             </div>
             <div
-              className={`w-12 text-right pr-3 py-1 text-[10px] font-mono ${
+              className={`w-12 text-right pr-3 py-1 text-[10px] font-mono h-full flex items-start justify-end leading-relaxed ${
                 line.type === "remove" ? "opacity-0" : ""
               } ${gutterClass}`}
             >
@@ -179,12 +179,12 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           {/* Content */}
           <div className="flex-1 py-1 pl-4 overflow-hidden">
             <span
-              className={`whitespace-pre-wrap break-all font-mono text-xs ${textClass}`}
+              className={`whitespace-pre-wrap break-all font-mono text-xs leading-relaxed ${textClass}`}
             >
               {line.type === "add" && "+ "}
               {line.type === "remove" && "- "}
               {line.type === "equal" && "  "}
-              {line.content}
+              {line.content || " "}
             </span>
           </div>
         </div>

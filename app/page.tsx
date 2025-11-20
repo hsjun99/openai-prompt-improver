@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Wand2,
   Play,
@@ -9,7 +9,19 @@ import {
   Terminal,
   FileJson,
   ChevronRight,
+  ChevronDown,
   Sparkles,
+  FileText,
+  MessageSquare,
+  Layout,
+  Settings,
+  PanelLeft,
+  X,
+  Check,
+  Activity,
+  Command,
+  Send,
+  CornerDownLeft,
 } from "lucide-react";
 import {
   analyzePromptAction,
@@ -37,13 +49,85 @@ export default function Page() {
   const [patch, setPatch] = useState<PatchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // "editor" = normal editing, "diff" = reviewing changes
+  const [activeView, setActiveView] = useState<"editor" | "diff">("editor");
+
+  // Collapsible state for patch notes
+  const [isPatchExpanded, setIsPatchExpanded] = useState(true);
+
+  // Resizable Panel State
+  const [rightPanelWidth, setRightPanelWidth] = useState(400);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Model Selection State
+  const [modelReasoning, setModelReasoning] = useState<
+    "low" | "medium" | "high"
+  >("low");
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Drag handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (isDragging) {
+        // Calculate new width from right edge of window
+        const newWidth = window.innerWidth - e.clientX;
+        // Min/Max constraints
+        if (newWidth > 300 && newWidth < 800) {
+          setRightPanelWidth(newWidth);
+        }
+      }
+    },
+    [isDragging]
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
 
   useEffect(() => {
-    if (step === AppStep.COMPLETE && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+    if (isDragging) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    } else {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     }
-  }, [step]);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsModelDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Auto-switch to diff view when a patch is ready
+    if (patch) {
+      setActiveView("diff");
+    }
+  }, [patch]);
 
   const handleRun = async () => {
     if (!promptInput.trim()) return;
@@ -53,25 +137,32 @@ export default function Page() {
     setAnalysis(null);
     setPatchPlan(null);
     setPatch(null);
+    setActiveView("editor"); // Reset to editor while working
 
     try {
       // Step 1: Analyze
       const analysisResult = await analyzePromptAction(
         promptInput,
-        failureInput
+        failureInput,
+        modelReasoning
       );
       setAnalysis(analysisResult);
 
       // Step 2: Plan patch (patch notes only)
       setStep(AppStep.PATCHING);
-      const plan = await planPatchAction(promptInput, analysisResult);
+      const plan = await planPatchAction(
+        promptInput,
+        analysisResult,
+        modelReasoning
+      );
       setPatchPlan(plan);
 
       // Step 3: Apply patch (diff-based) to produce revised prompt for diff view
       const patchResult = await patchPromptAction(
         promptInput,
         analysisResult,
-        plan
+        plan,
+        modelReasoning
       );
       setPatch(patchResult);
 
@@ -92,6 +183,7 @@ export default function Page() {
     setPatchPlan(null);
     setPatch(null);
     setError(null);
+    setActiveView("editor");
   };
 
   const handleAccept = () => {
@@ -101,295 +193,324 @@ export default function Page() {
       setAnalysis(null);
       setPatch(null);
       setError(null);
+      setActiveView("editor");
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-gray-300 selection:bg-indigo-500/30 flex flex-col font-sans">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-[#0d1117]/90 backdrop-blur supports-[backdrop-filter]:bg-[#0d1117]/60 sticky top-0 z-50">
-        <div className="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-indigo-600/10 border border-indigo-500/20 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/20">
-              <Wand2 className="text-indigo-400 w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-sm font-bold text-gray-100 tracking-tight">
-                VoxAI Prompt Studio
-              </h1>
-              <div className="text-[10px] text-gray-500 font-mono tracking-wider uppercase">
-                System Prompt Optimizer
-              </div>
-            </div>
+    <div
+      className={`h-screen bg-[#09090b] text-gray-300 selection:bg-indigo-500/30 flex flex-col font-sans overflow-hidden ${
+        isDragging ? "cursor-col-resize select-none" : ""
+      }`}
+    >
+      {/* Top Bar */}
+      <header className="h-10 bg-[#09090b] border-b border-white/10 flex items-center justify-between px-4 shrink-0 select-none">
+        <div className="flex items-center gap-3">
+          <div className="flex gap-2 group">
+            <div className="w-3 h-3 rounded-full bg-red-500/20 group-hover:bg-red-500 transition-colors border border-red-500/30"></div>
+            <div className="w-3 h-3 rounded-full bg-amber-500/20 group-hover:bg-amber-500 transition-colors border border-amber-500/30"></div>
+            <div className="w-3 h-3 rounded-full bg-emerald-500/20 group-hover:bg-emerald-500 transition-colors border border-emerald-500/30"></div>
           </div>
+          <div className="h-4 w-[1px] bg-white/10 mx-2"></div>
+          <span className="text-xs font-medium text-gray-400 flex items-center gap-2">
+            <Terminal className="w-3 h-3" /> VoxAI Prompt Studio
+          </span>
+        </div>
 
-          {/* Progress Steps */}
-          <div className="flex items-center bg-gray-900/50 border border-gray-800/50 rounded-full px-4 py-1.5">
-            <div
-              className={`flex items-center gap-2 text-xs font-medium transition-colors ${
-                step === AppStep.INPUT ? "text-indigo-400" : "text-gray-500"
-              }`}
-            >
-              <span
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border ${
-                  step === AppStep.INPUT
-                    ? "border-indigo-500/50 bg-indigo-500/10"
-                    : "border-gray-700 bg-gray-800"
-                }`}
-              >
-                1
-              </span>
-              Input
-            </div>
-            <ChevronRight className="w-3 h-3 text-gray-700 mx-2" />
-            <div
-              className={`flex items-center gap-2 text-xs font-medium transition-colors ${
-                step === AppStep.ANALYZING || step === AppStep.PATCHING
-                  ? "text-indigo-400"
-                  : "text-gray-500"
-              }`}
-            >
-              <span
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border ${
-                  step === AppStep.ANALYZING || step === AppStep.PATCHING
-                    ? "border-indigo-500/50 bg-indigo-500/10"
-                    : "border-gray-700 bg-gray-800"
-                }`}
-              >
-                {step === AppStep.ANALYZING || step === AppStep.PATCHING ? (
-                  <RotateCcw className="w-3 h-3 animate-spin" />
-                ) : (
-                  "2"
-                )}
-              </span>
-              Optimize
-            </div>
-            <ChevronRight className="w-3 h-3 text-gray-700 mx-2" />
-            <div
-              className={`flex items-center gap-2 text-xs font-medium transition-colors ${
-                step === AppStep.COMPLETE ? "text-emerald-400" : "text-gray-500"
-              }`}
-            >
-              <span
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border ${
-                  step === AppStep.COMPLETE
-                    ? "border-emerald-500/50 bg-emerald-500/10"
-                    : "border-gray-700 bg-gray-800"
-                }`}
-              >
-                3
-              </span>
-              Review
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-[10px] text-gray-500 px-2 py-1 bg-white/5 rounded border border-white/10">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+            gpt-5.1
           </div>
-
-          {/* Right side spacer or secondary actions */}
-          <div className="w-[140px]"></div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-[1600px] mx-auto w-full px-6 py-8 grid lg:grid-cols-12 gap-8">
-        {/* LEFT COLUMN: Inputs & Controls */}
-        <div
-          className={`flex flex-col gap-6 transition-all duration-500 ${
-            step === AppStep.COMPLETE ? "hidden" : "lg:col-span-5 col-span-12"
-          }`}
-        >
-          <div className="bg-[#161b22] border border-gray-800 rounded-xl overflow-hidden flex flex-col h-[calc(100vh-12rem)] shadow-sm">
-            {/* Prompt Editor Section */}
-            <div className="flex-1 flex flex-col border-b border-gray-800 min-h-0">
-              <div className="px-4 py-3 bg-gray-900/50 border-b border-gray-800 flex items-center justify-between">
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                  <Terminal className="w-3.5 h-3.5 text-indigo-400" />
-                  System Prompt
-                </label>
-                <span className="text-[10px] text-gray-600 font-mono">
-                  markdown
-                </span>
-              </div>
-              <div className="relative flex-1 group">
-                <textarea
-                  value={promptInput}
-                  onChange={(e) => setPromptInput(e.target.value)}
-                  className="absolute inset-0 w-full h-full bg-[#0d1117] p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none focus:bg-[#0d1117] leading-relaxed selection:bg-indigo-500/20"
-                  placeholder="// Paste your system prompt here..."
-                  spellCheck={false}
-                />
-              </div>
-            </div>
-
-            {/* Context/Failure Section */}
-            <div className="h-1/3 flex flex-col min-h-0">
-              <div className="px-4 py-3 bg-gray-900/50 border-b border-gray-800 flex items-center justify-between">
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                  <FileJson className="w-3.5 h-3.5 text-amber-400" />
-                  Context / Logs
-                </label>
-                <span className="text-[10px] text-gray-600 font-mono">
-                  optional
-                </span>
-              </div>
-              <div className="relative flex-1 group">
-                <textarea
-                  value={failureInput}
-                  onChange={(e) => setFailureInput(e.target.value)}
-                  className="absolute inset-0 w-full h-full bg-[#0d1117] p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none focus:bg-[#0d1117] leading-relaxed selection:bg-amber-500/20"
-                  placeholder="// Paste failure logs, user feedback, or describe specific issues to fix..."
-                  spellCheck={false}
-                />
-              </div>
-            </div>
-
-            {/* Action Bar */}
-            <div className="p-4 bg-gray-900/30 border-t border-gray-800">
-              {step === AppStep.INPUT || step === AppStep.ERROR ? (
+      <div className="flex-1 flex min-h-0 relative">
+        {/* Main Area (Left) - Editor OR Diff View */}
+        <div className="flex-1 flex flex-col min-w-0 bg-[#0c0c0e]">
+          {/* Toolbar */}
+          <div className="h-12 bg-[#09090b] border-b border-white/10 flex items-center justify-between px-4 shrink-0">
+            <div className="flex items-center gap-2">
+              {/* View Switcher */}
+              <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/5 mr-2">
                 <button
-                  onClick={handleRun}
-                  disabled={!promptInput.trim()}
-                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/20 hover:-translate-y-0.5 active:translate-y-0 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none shadow-lg shadow-indigo-900/20"
+                  onClick={() => setActiveView("editor")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                    activeView === "editor"
+                      ? "bg-[#1e1e1e] text-white shadow-sm ring-1 ring-white/10"
+                      : "text-gray-500 hover:text-gray-300"
+                  }`}
                 >
-                  <Sparkles className="w-4 h-4 fill-current" />
-                  Analyze & Optimize
+                  <FileText className="w-3.5 h-3.5" />
+                  System Prompt
                 </button>
-              ) : (
-                <div className="w-full py-3.5 bg-gray-800/50 border border-gray-700/50 text-gray-300 rounded-lg font-medium flex items-center justify-center gap-3 cursor-wait">
-                  <div className="relative w-4 h-4">
-                    <div className="absolute inset-0 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
-                  </div>
-                  {step === AppStep.ANALYZING
-                    ? "Analyzing patterns..."
-                    : "Generating improved prompt..."}
-                </div>
-              )}
-
-              {error && (
-                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs font-mono flex items-start gap-2">
-                  <span className="font-bold">Error:</span> {error}
-                </div>
-              )}
+                {patch && (
+                  <button
+                    onClick={() => setActiveView("diff")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
+                      activeView === "diff"
+                        ? "bg-[#1e1e1e] text-white shadow-sm ring-1 ring-white/10"
+                        : "text-emerald-400 hover:text-emerald-300"
+                    }`}
+                  >
+                    <GitCompare className="w-3.5 h-3.5" />
+                    Diff Review
+                  </button>
+                )}
+              </div>
             </div>
+          </div>
+
+          {/* Content Area */}
+          <div className="flex-1 relative bg-[#1e1e1e] flex min-h-0">
+            {activeView === "diff" && patch ? (
+              /* Diff View Mode */
+              <div className="flex-1 flex flex-col h-full">
+                <div className="flex-1 relative overflow-hidden">
+                  <DiffViewer
+                    original={promptInput}
+                    modified={patch.revisedPrompt}
+                  />
+                </div>
+
+                {/* Diff Actions Footer */}
+                <div className="h-16 bg-[#09090b] border-t border-white/10 flex items-center justify-end px-6 gap-3 shrink-0 z-10">
+                  <span className="text-xs text-gray-500 mr-auto flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                    Reviewing suggested changes
+                  </span>
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-2 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    onClick={handleAccept}
+                    className="px-4 py-2 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors shadow-lg shadow-indigo-500/20 flex items-center gap-2"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Accept Changes
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Editor Mode */
+              <>
+                {/* Line Numbers */}
+                <div className="w-12 bg-[#09090b] border-r border-white/5 flex flex-col items-end pt-4 pr-3 gap-[2px] text-gray-700 font-mono text-xs select-none shrink-0">
+                  {Array.from({ length: 30 }).map((_, i) => (
+                    <div key={i}>{i + 1}</div>
+                  ))}
+                </div>
+
+                {/* Text Area */}
+                <div className="flex-1 relative">
+                  <textarea
+                    value={promptInput}
+                    onChange={(e) => setPromptInput(e.target.value)}
+                    className="absolute inset-0 w-full h-full bg-[#1e1e1e] p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none leading-relaxed selection:bg-indigo-500/20 scrollbar-thin scrollbar-thumb-gray-700"
+                    placeholder="// Paste your system prompt here..."
+                    spellCheck={false}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Visualization */}
+        {/* Resize Handle */}
         <div
-          className={`flex flex-col gap-6 transition-all duration-500 ${
-            step === AppStep.COMPLETE
-              ? "col-span-12"
-              : "lg:col-span-7 col-span-12"
-          } ${
-            step === AppStep.INPUT
-              ? "hidden lg:flex lg:opacity-40 lg:scale-95 lg:blur-[2px] pointer-events-none grayscale transition-all duration-1000"
-              : "opacity-100 scale-100 blur-0 grayscale-0"
+          onMouseDown={handleMouseDown}
+          className={`w-[1px] hover:w-[4px] group cursor-col-resize bg-white/10 hover:bg-indigo-500 transition-all z-50 flex flex-col justify-center items-center relative ${
+            isDragging ? "!w-[4px] !bg-indigo-500" : ""
           }`}
         >
-          {/* Analysis Card */}
-          {(step === AppStep.ANALYZING ||
-            step === AppStep.PATCHING ||
-            step === AppStep.COMPLETE) && (
-            <AnalysisView
-              analysis={analysis}
-              isAnalyzing={step === AppStep.ANALYZING}
-            />
-          )}
+          {/* Invisible hit area for easier grabbing */}
+          <div className="absolute inset-y-0 -left-2 -right-2 z-10 bg-transparent"></div>
+        </div>
 
-          {/* Diff View */}
-          {(step === AppStep.PATCHING || step === AppStep.COMPLETE) && (
-            <div className="flex-1 flex flex-col min-h-[500px] animate-in fade-in slide-in-from-bottom-4 duration-700">
-              {step === AppStep.PATCHING ? (
-                <div className="h-64 flex flex-col items-center justify-center space-y-4 p-12 border border-gray-800 rounded-xl bg-gray-900/30 border-dashed">
-                  <Wand2 className="w-10 h-10 text-indigo-500 animate-pulse" />
-                  <p className="text-indigo-300/80 font-mono text-sm">
-                    Applying surgical patches...
-                  </p>
-                </div>
-              ) : (
-                patch && (
-                  <>
-                    {/* Patch Notes */}
-                    <div className="mb-8">
-                      <div className="flex items-center gap-2 mb-4">
-                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
-                          Proposed Changes
-                        </h3>
-                        <div className="h-[1px] flex-1 bg-gray-800"></div>
-                      </div>
-
-                      <div className="grid gap-3">
-                        {patch.patchNotes?.map((note, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-start gap-3 text-sm text-emerald-100/90 bg-emerald-900/10 p-3 rounded-lg border border-emerald-900/30"
-                          >
-                            <div className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] flex-shrink-0"></div>
-                            <span className="leading-relaxed">{note}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Action Header for Review */}
-                    <div className="flex items-center justify-between mb-4 bg-gray-900/50 p-4 rounded-xl border border-gray-800 backdrop-blur-sm sticky top-20 z-10 shadow-xl">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                          <GitCompare className="w-4 h-4 text-emerald-400" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-200">
-                            Diff Review
-                          </div>
-                          <div className="text-[10px] text-emerald-500/80 font-mono">
-                            Ready to apply
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={handleReset}
-                          className="px-4 py-2 text-xs font-medium text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-lg"
-                        >
-                          Discard
-                        </button>
-                        <button
-                          onClick={handleAccept}
-                          className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-emerald-900/20 flex items-center gap-2 transition-all hover:-translate-y-0.5 active:translate-y-0"
-                        >
-                          <GitCompare className="w-3.5 h-3.5" />
-                          Accept Changes
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-800">
-                      <DiffViewer
-                        original={promptInput}
-                        modified={patch.revisedPrompt}
-                      />
-                    </div>
-                    <div ref={bottomRef} className="h-20" />
-                  </>
-                )
-              )}
+        {/* AI Pane (Right) */}
+        <div
+          style={{ width: rightPanelWidth }}
+          className="bg-[#09090b] border-l border-white/10 flex flex-col shrink-0"
+        >
+          {/* AI Header */}
+          <div className="h-12 border-b border-white/10 flex items-center justify-between px-4 shrink-0">
+            <span className="text-xs font-medium text-gray-300 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> AI Assistant
+            </span>
+            <div className="flex gap-2">
+              <PanelLeft className="w-3.5 h-3.5 text-gray-500 hover:text-gray-300 cursor-pointer" />
             </div>
-          )}
+          </div>
 
-          {/* Empty State / Placeholder for Right Column */}
-          {step === AppStep.INPUT && (
-            <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-6 border-2 border-gray-800 border-dashed rounded-xl bg-gray-900/20">
-              <div className="w-20 h-20 rounded-full bg-gray-800/50 flex items-center justify-center">
-                <GitCompare className="w-10 h-10 opacity-20" />
-              </div>
-              <div className="text-center">
-                <p className="font-medium text-gray-500">No Analysis Yet</p>
-                <p className="text-sm text-gray-600 mt-1">
-                  Enter a system prompt to begin optimization
+          {/* AI Content (Scrollable) */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-gray-800">
+            {/* Initial State */}
+            {step === AppStep.INPUT && !analysis && (
+              <div className="text-center py-8 text-gray-600">
+                <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center mx-auto mb-3 border border-white/5">
+                  <Wand2 className="w-6 h-6 opacity-50" />
+                </div>
+                <p className="text-sm font-medium text-gray-500">
+                  Ready to optimize
                 </p>
               </div>
+            )}
+
+            {/* Analysis Result */}
+            {(step === AppStep.ANALYZING || analysis) && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <AnalysisView
+                  analysis={analysis}
+                  isAnalyzing={step === AppStep.ANALYZING}
+                />
+              </div>
+            )}
+
+            {/* Patch Notes (Collapsible) */}
+            {(step === AppStep.PATCHING || patch) && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* Patching Loading State */}
+                {step === AppStep.PATCHING && (
+                  <div className="p-4 rounded-lg bg-white/5 border border-white/10 flex items-center gap-3">
+                    <RotateCcw className="w-4 h-4 text-indigo-400 animate-spin" />
+                    <span className="text-xs text-gray-400">
+                      Generating patches...
+                    </span>
+                  </div>
+                )}
+
+                {/* Patch Notes List */}
+                {patch && (
+                  <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setIsPatchExpanded(!isPatchExpanded)}
+                      className="w-full flex items-center justify-between p-4 hover:bg-emerald-500/5 transition-colors"
+                    >
+                      <h4 className="text-xs font-medium text-emerald-400 flex items-center gap-2">
+                        <Check className="w-3 h-3" /> Proposed Changes
+                      </h4>
+                      {isPatchExpanded ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-emerald-500/50" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-emerald-500/50" />
+                      )}
+                    </button>
+
+                    {isPatchExpanded && (
+                      <div className="px-4 pb-4 animate-in slide-in-from-top-2 duration-200">
+                        <ul className="space-y-2">
+                          {patch.patchNotes?.map((note, i) => (
+                            <li
+                              key={i}
+                              className="text-[11px] text-emerald-200/70 pl-3 border-l-2 border-emerald-500/20 leading-relaxed"
+                            >
+                              {note}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-3 pt-3 border-t border-emerald-500/10 text-[10px] text-emerald-500/50">
+                          Check the Diff View on the left to review details.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Chat Input / Action Bar (Bottom) */}
+          <div className="p-4 border-t border-white/10 bg-[#09090b]">
+            {/* Model Selector Bar - Moved HERE */}
+            <div className="flex justify-between items-center mb-3 px-1">
+              <div
+                className="flex items-center gap-2 relative"
+                ref={dropdownRef}
+              >
+                <button
+                  onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 transition-colors text-[10px] text-gray-400 border border-white/5"
+                >
+                  <Sparkles className="w-3 h-3 text-indigo-400" />
+                  <span>gpt-5.1 ({modelReasoning})</span>
+                  <ChevronDown className="w-3 h-3 opacity-50" />
+                </button>
+
+                {/* Dropdown Menu (Upwards) */}
+                {isModelDropdownOpen && (
+                  <div className="absolute bottom-full left-0 mb-2 w-48 bg-[#1e1e1e] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                    <div className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider bg-[#252529] border-b border-white/5">
+                      Reasoning Effort
+                    </div>
+                    <div className="p-1">
+                      {(["low", "medium", "high"] as const).map((level) => (
+                        <button
+                          key={level}
+                          onClick={() => {
+                            setModelReasoning(level);
+                            setIsModelDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-md transition-colors ${
+                            modelReasoning === level
+                              ? "bg-indigo-500/10 text-indigo-300"
+                              : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                          }`}
+                        >
+                          <span className="capitalize">{level}</span>
+                          {modelReasoning === level && (
+                            <Check className="w-3 h-3" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+
+            <div className="relative bg-[#1e1e1e] rounded-xl border border-white/10 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/20 transition-all shadow-sm">
+              <textarea
+                value={failureInput}
+                onChange={(e) => setFailureInput(e.target.value)}
+                className="w-full bg-transparent p-3 pr-10 font-mono text-xs text-gray-300 focus:outline-none resize-none h-20 placeholder:text-gray-600 leading-relaxed"
+                placeholder="Describe the issue or paste failure logs here..."
+                spellCheck={false}
+              />
+
+              {/* Action Button inside input */}
+              <div className="absolute bottom-2 right-2">
+                {step === AppStep.ANALYZING || step === AppStep.PATCHING ? (
+                  <div className="p-1.5 rounded-lg bg-white/5 text-gray-500 cursor-wait">
+                    <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleRun}
+                    disabled={!promptInput.trim()}
+                    className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none group"
+                  >
+                    {step === AppStep.COMPLETE ? (
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    ) : (
+                      <CornerDownLeft className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {error && (
+              <div className="mt-3 text-[10px] text-red-400 font-mono text-center bg-red-500/10 p-2 rounded border border-red-500/20 animate-in fade-in slide-in-from-top-1">
+                {error}
+              </div>
+            )}
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
